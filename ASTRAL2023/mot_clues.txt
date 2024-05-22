@@ -1,0 +1,6 @@
+2 accx (m.s^-^2)
+3 accy (m.s^-^2)
+4 accz (m.s^-^2)
+5 ratex (rad/s)
+6 ratey (rad/s)
+7 ratez (rad/s)
