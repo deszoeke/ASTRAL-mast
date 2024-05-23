@@ -1,13 +1,16 @@
 "general PSL DAS readers"
 module NoaaDas
 
-export get_das_filenames
+using Dates
+using Printf
+
+export get_das_filenames, get_das_pathfiles
 export yday, psldatetime, decimal_hour
 export read_das_dict
 
 # utility functions
-m2n(x) = ismissing(x) ? NaN : x
-pd = permutedims
+# m2n(x) = ismissing(x) ? NaN : x
+# pd = permutedims
 
 # general PSL DAS readers
 
