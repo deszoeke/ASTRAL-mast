@@ -1,15 +1,8 @@
-"general PSL DAS readers"
-module NoaaDas
-
-export get_das_filenames
-export yday, psldatetime, decimal_hour
-export read_das_dict
+# general PSL DAS readers
 
 # utility functions
 m2n(x) = ismissing(x) ? NaN : x
 pd = permutedims
-
-# general PSL DAS readers
 
 # parameters for ASTRAL - feed defaults to functions
 baseyear = 2024
@@ -18,7 +11,7 @@ mastdir = "./data/PSL/"
 
 "yearday from Date or DateTime"
 yday(dt) = Dates.value(Date(dt) - Date(year(dt)-1,12,31))
-yday(ddd::AbstractString) = parse(Int, ddd)
+yday(ddd::String) = parse(Int, ddd)
 
 "return all filenames with prefix and date dt"
 function get_das_filenames(prefix, yd::Integer, mastdir=mastdir)
@@ -52,8 +45,8 @@ end
 function psldatetime(d::Date, hr::Integer=0, minute::Real=0)
     DateTime(Date(d)) + Hour(hr) + Minute(minute) + Second(second)
 end
-function psldatetime(yearday::Integer, hr::Integer=0; minute::Real=0, baseyear=baseyear)
-    DateTime(baseyear-1,12,31) + Day(yearday) + Hour(hr) + Minute(minute)
+function psldatetime(yearday::Integer, hr::Integer=0; minute::Real=0, year=baseyear)
+    DateTime(year,12,31) + Day(yearday) + Hour(hr) + Minute(minute)
 end
 # psldatetime(Date(2024,5,8), hr, "0606111")
 # To get filename from the date, hour
@@ -65,27 +58,27 @@ nheader = 1
 # pathfilename = get_das_pathfiles(prefix, dt::DateTime, mastdir=mastdir)
 
 "read das data and put in a dictionary"
-function read_das_dict(pathfilename, keys;
+function read_son_dict(pathfilename, keys;
     nheader=nheader,
     nsample=sum(countlines.(pathfilename) .- nheader),
     ncolumn=length(keys)-1 ) # default columns in data excluding datestamp
 
     # read data from file
-    datatime, X = read_das_data(pathfilename; 
+    datatime, X = read_son_data(pathfilename; 
         nheader=nheader,
         nsample=nsample,
-        ncolumn=ncolumn ) # specifying manages memory best
+        ncolumn=ncolumn )
     
     return das_dict(keys, datatime, X) # returns dict
 end
 
 parseblank2missing(T, s) = isempty(s) ? missing : parse(T, s)
 
-"read and parse one das data file"
-function read_das_data(pathfilename::AbstractString;
-    nheader=1,
+"read and parse one file"
+function read_son_data(pathfilename::AbstractString;
+    nheader=1, 
     nsample=countlines(pathfilenames) - nheader, 
-    ncolumn=30 )
+    ncolumn=22 )
 
     # trivially iterate over 1-vector
     dt, X = read_scs_data(pathfilename[1:1]; 
@@ -94,10 +87,10 @@ function read_das_data(pathfilename::AbstractString;
 end
 
 "read and concatenate data from multiple files"
-function read_das_data(pathfilename::Vector{<:AbstractString};
+function read_son_data(pathfilename::Vector{<:AbstractString};
     nheader=1,
     nsample=sum( countlines.(pathfilenames) - nheader ),
-    ncolumn=30 ) # data, not including timestamp
+    ncolumn=5 ) # data, not including timestamp
 
     # preallocate the data
     # psltime = Vector{String}(undef, nsample) # will point to data as it is read
@@ -122,17 +115,20 @@ function read_das_data(pathfilename::Vector{<:AbstractString};
                 nl += 1
                 splt = split(line, r"[\s,]+")
 
-                nx = min(ncolumn, length(splt[2:end]))
+                ii = 4:7 # good columns for sonic
+                nx = min(ncolumn, length(splt[ii]))
                 if nx > 0 # skip empty lines
                     psltime = splt[1]
                     psldt[nl] = psldatetime(basedt, hr, psltime)
 
                     dataline = try
-                        parseblank2missing.(Float32, splt[2:end])
+                        parseblank2missing.(Float32, splt[ii])
                     catch
-                        error("failed to parse: $(splt[2:end])")
+                        error("failed to parse: $(splt[ii])")
                     end
                     maxcol = max(maxcol, nx) # data in longest line
+
+                    # X[nl, 1:nx] .= cat(lat,lon,dataline[1:nx], dims=1)
                     X[nl, 1:nx] .= dataline[1:nx]
                 end
             end
@@ -141,6 +137,9 @@ function read_das_data(pathfilename::Vector{<:AbstractString};
 
     return psldt[1:nl], X[1:nl, 1:maxcol]
 end
+
+# Dicts are just mutable groups bound to data.
+# Data in dictionaries don't need to be allocated.
 
 "assign data to a dict of keys"
 function das_dict(keys, datatime, X)
@@ -165,6 +164,4 @@ function decimal_hour(dt::DateTime)::Float64
     # Calculate the decimal hour
     decimal_hour = hour + minute / 60 + second / 3600 + millisecond / 3600000
     return decimal_hour
-end
-
 end

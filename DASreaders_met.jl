@@ -1,15 +1,8 @@
-"general PSL DAS readers"
-module NoaaDas
-
-export get_das_filenames
-export yday, psldatetime, decimal_hour
-export read_das_dict
+# general PSL DAS readers
 
 # utility functions
 m2n(x) = ismissing(x) ? NaN : x
 pd = permutedims
-
-# general PSL DAS readers
 
 # parameters for ASTRAL - feed defaults to functions
 baseyear = 2024
@@ -165,6 +158,4 @@ function decimal_hour(dt::DateTime)::Float64
     # Calculate the decimal hour
     decimal_hour = hour + minute / 60 + second / 3600 + millisecond / 3600000
     return decimal_hour
-end
-
 end
