@@ -69,7 +69,7 @@ nheader = 1
 
 "read das data and put in a dictionary"
 function read_das_dict(pathfilename, keys;
-    nheader=nheader,
+    nheader=1,
     nsample=sum(countlines.(pathfilename) .- nheader),
     ncolumn=length(keys)-1 ) # default columns in data excluding datestamp
 
@@ -168,6 +168,190 @@ function decimal_hour(dt::DateTime)::Float64
     # Calculate the decimal hour
     decimal_hour = hour + minute / 60 + second / 3600 + millisecond / 3600000
     return decimal_hour
+end
+
+end
+
+module DasGps
+
+#using Dates
+using ..NoaaDas
+export read_scs_dict
+
+# SCS readers process lat,lon into decimal degrees
+
+"read das data and put in a dictionary"
+function read_scs_dict(pathfilename, keys;
+    nheader=1,
+    nsample=sum(countlines.(pathfilename) .- nheader),
+    ncolumn=length(keys)-1 ) # default columns in data excluding datestamp
+
+    # read data from file
+    datatime, X = read_scs_data(pathfilename; 
+        nheader=nheader, nsample=nsample, ncolumn=ncolumn )
+    return das_dict(keys, datatime, X) # returns dict
+end
+
+# parse gps lat,lon to decimal degrees
+NSEWsgn(s) = endswith(uppercase(s),r"S|W") ? -1 : 1
+declat(s) = NSEWsgn(s)*( parse(Float32, s[1:2]) + parse(Float32, s[3:end-1])/60 )
+declon(s) = NSEWsgn(s)*( parse(Float32, s[1:3]) + parse(Float32, s[4:end-1])/60 )
+
+parseblank2missing(T, s) = isempty(s) ? missing : parse(T, s)
+
+"read and parse one file"
+function read_scs_data(pathfilename::AbstractString;
+    nheader=1, 
+    nsample=countlines(pathfilenames) - nheader, 
+    ncolumn=26 )
+
+    # trivially iterate over 1-vector
+    dt, X = read_scs_data(pathfilename[1:1]; 
+        nheader=nheader, nsample=nsample, ncolumn=ncolumn )
+    return dt, X
+end
+
+"read and concatenate data from multiple files"
+function read_scs_data(pathfilename::Vector{<:AbstractString};
+    nheader=1,
+    nsample=sum( countlines.(pathfilenames) - nheader ),
+    ncolumn=26 ) # data, not including timestamp
+
+    # preallocate the data
+    # psltime = Vector{String}(undef, nsample) # will point to data as it is read
+    psldt = Vector{DateTime}(undef, nsample) # will point to data as it is read
+    X = Array{Union{Float32,Missing}, 2}(undef, nsample, ncolumn)
+    fill!(X, missing)
+
+    nl = 0
+    maxcol=0
+    for pfile in pathfilename
+        # find hour from the filename
+        shortfilename = last(splitpath(pfile))
+        ddd = shortfilename[end-12:end-10]
+        basedt = Date(baseyear-1,12,31) + Day(yday(ddd))
+        hr = parse(Int32, shortfilename[end-9:end-8])
+
+        open(pfile) do file
+            for _ in 1:nheader
+                readline(file) # skip header
+            end
+            for line in readlines(file)
+                nl += 1
+                splt = split(line, r"[\s,]+")
+
+                nx = min(ncolumn, length(splt[2:end]))
+                if nx > 0 # skip empty lines
+                    psltime = splt[1]
+                    psldt[nl] = psldatetime(basedt, hr, psltime)
+
+                    lat = declat( splt[2] )
+                    lon = declon( splt[3] )
+                    @show splt
+                    dataline = parseblank2missing.(Float32, splt[4:end])
+                    maxcol = max(maxcol, nx) # data in longest line
+
+                    X[nl, 1:nx] .= cat(lat,lon,dataline[1:nx-2], dims=1)
+                end
+            end
+        end
+    end
+
+    return psldt[1:nl], X[1:nl, 1:maxcol]
+end
+
+end
+
+module DasScs
+
+using Dates
+using ..NoaaDas
+using ..NoaaDas: das_dict
+
+export read_scs_dict
+
+baseyear = 2024
+
+# SCS readers process lat,lon into decimal degrees
+
+"read das data and put in a dictionary"
+function read_scs_dict(pathfilename, keys;
+    nheader=1,
+    nsample=sum(countlines.(pathfilename) .- nheader),
+    ncolumn=length(keys)-1 ) # default columns in data excluding datestamp
+
+    # read data from file
+    datatime, X = read_scs_data(pathfilename; 
+        nheader=nheader, nsample=nsample, ncolumn=ncolumn )
+    return das_dict(keys, datatime, X) # returns dict
+end
+
+# parse gps lat,lon to decimal degrees
+NSEWsgn(s) = endswith(uppercase(s),r"S|W") ? -1 : 1
+declat(s) = NSEWsgn(s)*( parse(Float32, s[1:2]) + parse(Float32, s[3:end-1])/60 )
+declon(s) = NSEWsgn(s)*( parse(Float32, s[1:3]) + parse(Float32, s[4:end-1])/60 )
+
+parseblank2missing(T, s) = isempty(s) ? missing : parse(T, s)
+
+"read and parse one file"
+function read_scs_data(pathfilename::AbstractString;
+    nheader=1, 
+    nsample=countlines(pathfilenames) - nheader, 
+    ncolumn=26 )
+
+    # trivially iterate over 1-vector
+    dt, X = read_scs_data(pathfilename[1:1]; 
+        nheader=nheader, nsample=nsample, ncolumn=ncolumn )
+    return dt, X
+end
+
+"read and concatenate data from multiple files"
+function read_scs_data(pathfilename::Vector{<:AbstractString};
+    nheader=1,
+    nsample=sum( countlines.(pathfilenames) - nheader ),
+    ncolumn=26 ) # data, not including timestamp
+
+    # preallocate the data
+    # psltime = Vector{String}(undef, nsample) # will point to data as it is read
+    psldt = Vector{DateTime}(undef, nsample) # will point to data as it is read
+    X = Array{Union{Float32,Missing}, 2}(undef, nsample, ncolumn)
+    fill!(X, missing)
+
+    nl = 0
+    maxcol=0
+    for pfile in pathfilename
+        # find hour from the filename
+        shortfilename = last(splitpath(pfile))
+        ddd = shortfilename[end-12:end-10]
+        basedt = Date(baseyear-1,12,31) + Day(yday(ddd))
+        hr = parse(Int32, shortfilename[end-9:end-8])
+
+        open(pfile) do file
+            for _ in 1:nheader
+                readline(file) # skip header
+            end
+            for line in readlines(file)
+                nl += 1
+                splt = split(line, r"[\s,]+")
+
+                nx = min(ncolumn, length(splt[2:end]))
+                if nx > 0 # skip empty lines
+                    psltime = splt[1]
+                    psldt[nl] = psldatetime(basedt, hr, psltime)
+
+                    lat = declat( splt[2] )
+                    lon = declon( splt[3] )
+
+                    dataline = parseblank2missing.(Float32, splt[4:end])
+                    maxcol = max(maxcol, nx) # data in longest line
+
+                    X[nl, 1:nx] .= cat(lat,lon,dataline[1:nx-2], dims=1)
+                end
+            end
+        end
+    end
+
+    return psldt[1:nl], X[1:nl, 1:maxcol]
 end
 
 end
