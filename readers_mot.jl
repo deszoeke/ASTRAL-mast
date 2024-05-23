@@ -7,32 +7,23 @@
 #using Pkg; Pkg.activate("/Users/deszoeks/Projects/ASTRAL/mast")
 
 "General-purpose PSL DAS readers module NoaaDas."
-module NoaaDas
-
-using Dates
-using Printf
-
-export get_das_pathfiles
-export psldatetime, yday
-export read_das_dict
-
+modlue NoaaDas
 # utility functions
-# m2n(x) = ismissing(x) ? NaN : x
-# pd = permutedims
+m2n(x) = ismissing(x) ? NaN : x
+pd = permutedims
 
 # parameters for ASTRAL - feed defaults to functions
-const baseyear = 2024
-const mastdir = "./data/PSL/"
-ncolumn = 22 # change for different file types
-
+baseyear = 2024
+mastdir = "./data/PSL/"
+# ncolumn = 22 # change for different file types
 
 "yearday from Date or DateTime"
 yday(dt) = Dates.value(Date(dt) - Date(year(dt)-1,12,31))
-yday(ddd::AbstractString) = parse(Int, ddd)
+yday(ddd::String) = parse(Int, ddd)
 
 "return all filenames with prefix and date dt"
 function get_das_filenames(prefix, yd::Integer, mastdir=mastdir)
-    filter(startswith(prefix),
+    filter(startswith(prefix), 
            readdir(joinpath(mastdir, @sprintf("%03d",yd))))
 end
 function get_das_filenames(prefix, dt::Date, mastdir=mastdir)
@@ -59,11 +50,11 @@ function psldatetime(d::Date, hr::Integer, psltime::AbstractString)
     sss = Millisecond(parse(Int32, psltime[5:7]))
     DateTime(Date(d)) + Hour(hr) + mm + SS + sss
 end
-# function psldatetime(d::Date, hr::Integer=0, minute::Real=0)
-#     DateTime(Date(d)) + Hour(hr) + Minute(minute) + Second(second)
-# end
-function psldatetime(yearday::Integer, hr::Integer=0; minute::Real=0, baseyear=baseyear)
-    DateTime(baseyear-1,12,31) + Day(yearday) + Hour(hr) + Minute(minute)
+function psldatetime(d::Date, hr::Integer=0, minute::Real=0)
+    DateTime(Date(d)) + Hour(hr) + Minute(minute) + Second(second)
+end
+function psldatetime(yearday::Integer, hr::Integer=0; minute::Real=0, year=baseyear)
+    DateTime(year,12,31) + Day(yearday) + Hour(hr) + Minute(minute)
 end
 # psldatetime(Date(2024,5,8), hr, "0606111")
 # To get filename from the date, hour
@@ -77,20 +68,24 @@ nheader = 1
 "read das data and put in a dictionary"
 function read_das_dict(pathfilename, keys;
     nheader=nheader,
-    nsample=sum( countlines.(pathfilename) .- nheader ),
-    ncolumn=length(keys) )
+    nsample=sum(countlines.(pathfilename) .- nheader),
+    ncolumn=length(keys)-1 ) # default columns in data excluding datestamp
 
     # read data from file
-    datatime, X = read_das_data(pathfilename;
-        nheader=nheader, nsample=nsample, ncolumn=ncolumn )
-
+    datatime, X = read_das_data(pathfilename; 
+        nheader=nheader,
+        nsample=nsample,
+        ncolumn=ncolumn ) # specifying manages memory best
+    
     return das_dict(keys, datatime, X) # returns dict
 end
+
+parseblank2missing(T, s) = isempty(s) ? missing : parse(T, s)
 
 "read and parse one file"
 function read_das_data(pathfilename::AbstractString;
     nheader=1, 
-    nsample=sum( countlines.(pathfilename) .- nheader ), 
+    nsample=countlines(pathfilenames) - nheader, 
     ncolumn=22 )
 
     # trivially iterate over 1-vector
@@ -100,7 +95,7 @@ function read_das_data(pathfilename::AbstractString;
 end
 
 "read and concatenate data from multiple files"
-function read_das_data(pathfilenames::Vector{<:AbstractString};
+function read_das_data(pathfilename::Vector{<:AbstractString};
     nheader=1,
     nsample=sum( countlines.(pathfilenames) - nheader ),
     ncolumn=26 ) # data, not including timestamp
@@ -113,7 +108,7 @@ function read_das_data(pathfilenames::Vector{<:AbstractString};
 
     nl = 0
     maxcol=0
-    for pfile in pathfilenames
+    for pfile in pathfilename
         # find hour from the filename
         shortfilename = last(splitpath(pfile))
         ddd = shortfilename[end-12:end-10]
@@ -150,67 +145,6 @@ function read_das_data(pathfilenames::Vector{<:AbstractString};
     return psldt[1:nl], X[1:nl, 1:maxcol]
 end
 
-#=
-"read das file data"
-function read_das_data(pathfilename;
-    nheader=nheader,
-    nsample=countlines(pathfilename) - nheader,
-    ncolumn=ncolumn )
-
-    # preallocate the data
-    psltime = Vector{String}(undef, nsample) # will point to data as it is read
-    X = Array{Union{Float32,Missing}, 2}(undef, nsample, ncolumn-1)
-    fill!(X, missing)
-
-    open(pathfilename) do file
-        for _ in 1:nheader
-            readline(file) # skip header
-        end
-        nl = 0
-        for line in readlines(file)
-            nl += 1
-            splt = split(line, [' ',',','\t'])
-            psltime[nl] = splt[1]
-            dataline = parse.(Float32, splt[2:end])
-            nx = min(ncolumn, length(dataline))
-            X[nl,1:nx] .= dataline[1:nx]
-        end
-    end
-
-    # find hour from the filename
-    shortfilename = last(splitpath(pathfilename))
-    ddd = shortfilename[end-12:end-10]
-    basedt = Date(baseyear-1,12,31) + Day(yday(ddd))
-    hr = parse(Int32, shortfilename[end-9:end-8])
-    psldt = psldatetime.(basedt, hr, psltime)
-    return psldt, X
-end
-
-# concatentate the data like this
-# X = cat(X1,X2, dims=1)
-# dt = cat(dt1,dt2, dims=1)
-"read and concatenate data from multiple files"
-function read_das_dict(pathfilenames::Vector{String}, keys;
-    nheader=nheader,
-    nsample=sum( countlines.(pathfilenames) ),
-    ncolumn=length(keys) )
-
-    dt = Vector{DateTime}(undef, nsample)
-    X  = Array{Union{Float32,Missing}, 2}(undef, nsample, length(keys)-1)
-
-    # append data for each station
-    nl = 0
-    for pfn in pathfilenames
-        tdt,tX = read_das_data(pfn)
-        count = length(tdt)
-        dt[nl+1:nl+count  ]   .= tdt
-        X[ nl+1:nl+count,:] .=  tX
-        nl += count
-    end
-    return das_dict(keys, dt[1:nl], X[1:nl,:])
-end
-=#
-
 # Dicts are just mutable groups bound to data.
 # Data in dictionaries don't need to be allocated.
 
@@ -219,7 +153,7 @@ function das_dict(keys, datatime, X)
     D = Dict{eltype(keys), Any}()
 
     # special DateTime
-    D[keys[1]] = datatime
+    D[keys[1]] = datatime 
     # fill rest of dictionary
     for (ik, ky) in enumerate(keys[2:end])
         D[ky] = X[:, ik]
@@ -227,9 +161,19 @@ function das_dict(keys, datatime, X)
     return D
 end
 
+"compute the decimal hour of day from a datetime"
+function decimal_hour(dt::DateTime)::Float64
+    hour = Dates.hour(dt)
+    minute = Dates.minute(dt)
+    second = Dates.second(dt)
+    millisecond = Dates.millisecond(dt)
+    
+    # Calculate the decimal hour
+    decimal_hour = hour + minute / 60 + second / 3600 + millisecond / 3600000
+    return decimal_hour
+end
+
 end # NoaaDas
-
-
 
 "GPS readers : module DasGps"
 module DasGps
@@ -250,7 +194,7 @@ yday(ddd::AbstractString) = parse(Int, ddd)
 "read gps file GPRMC data into a dict"
 function read_gps_dict(pathfilename;
     nheader=1,
-    nsample=sum( countlines.(pathfilename) - nheader ),
+    nsample=countlines(pathfilename) - nheader,
     ncolumn=7 )
 
     # find datetime from the filename
@@ -371,7 +315,7 @@ end
 "read differential gps heading data into a dict"
 function read_hed_dict(pathfilename;
     nheader=1,
-    nsample=sum( countlines.(pathfilename) - nheader ),
+    nsample=countlines(pathfilename) - nheader,
     ncolumn=2 )
 
     # find datetime from the filename
