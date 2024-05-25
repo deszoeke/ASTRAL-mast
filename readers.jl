@@ -498,3 +498,90 @@ function read_scs_data(pathfilename::Vector{<:AbstractString};
 end
 
 end
+
+
+"read POSMV data, esp. PASHR pitch, roll, heave messages"
+module ShipPosmv
+
+using Dates
+
+export get_posmv_file
+export read_pashr_dict
+
+function get_posmv_file(msg, dt; path="./data/scs/NAV") 
+    # POSMV-V5-PASHR-RAW_20240510-000001.Raw
+    ds = Dates.format(dt, dateformat"yyyymmdd")
+    joinpath.( path, 
+        filter(s -> startswith(s,"POSMV-V5-$(uppercase(msg))-RAW_$ds") 
+                    && endswith(s,".Raw"), 
+            readdir(path)) )
+end
+
+"expand scalars to make iterable, keep vectors as they are"
+itr_expand(x) = x isa Vector ? x : Ref(x)
+
+"read PSDMV-PASHR into a vector of columns X"
+function read_pashr_data(fullfiles; nheader=0, nsample=sum(countlines.(fullfiles) .- nheader))
+
+    # column designations for POSMV PASHR file
+    colnames = split("date time nmeastring gpstime heading trueheading roll pitch heave roll_accuracy pitch_accuracy heading_accuracy gps_update_qualiy_flag ins_Status_flag checksum")
+    coltypes = [Date; Time; String; Time; Float32; Bool; fill(Float32,6); UInt8; UInt8; String]
+    colparsers = [  s -> Date(s, dateformat"mm/dd/yyyy");
+                    s -> Time(s, dateformat"HH:MM:SS.sss");
+                    s -> s;
+                    s -> Time(s, dateformat"HHMMSS.sss");
+                    s -> parse(Float32, s)
+                    s -> s == "T"
+                    fill(s -> parse(Float32, s), 6);
+                    s -> parse(UInt8, s)
+                    s -> parse(UInt8, s)
+                    s -> s ]
+    ncol = length(colnames)
+
+    # initialize vectors in X to receive data
+    X = Vector{Any}(undef, ncol)
+    for (ci, ct) in enumerate(coltypes)
+        X[ci] = Vector{ct}(undef, nsample)
+    end
+    # index as X[col][line]
+
+    # read the file
+    nl = 0
+    for file in itr_expand(fullfiles)
+        open(file) do f
+            for line in readlines(f)
+                s = split(line, r",|\*")
+                if s[3] == "\$PASHR"
+                    nl += 1
+                    # parse and write the data to X
+                    for (ci, cp) in enumerate(colparsers)
+                        X[ci][nl] = cp(s[ci])
+                    end
+                end
+            end
+        end
+    end
+    return X, nl
+end
+
+function read_pashr_dict(fullfiles; nheader=0, nsample=sum(countlines.(fullfiles) .- nheader))
+    # read the data into the omnivector
+    X, nl = read_pashr_data(fullfiles; nheader=nheader, nsample=nsample)
+    #       1    2    3          4       5       6           7    8     9     10            11             12               13                     14              15
+    #       date time nmeastring gpstime heading trueheading roll pitch heave roll_accuracy pitch_accuracy heading_accuracy gps_update_qualiy_flag ins_Status_flag checksum
+    #            1               2       3       4           5    6     7     8             9              10               11                     12              13            
+    
+    pashrkeys = Symbol.(
+    split("     time            gpstime heading trueheading roll pitch heave roll_accuracy pitch_accuracy heading_accuracy gps_update_qualiy_flag ins_Status_flag checksum"))
+   
+    D = Dict{Symbol, Any}()
+
+    D[:time] = X[1][1:nl] .+ X[2][1:nl] # make a datetime
+    # assign the data columns to X, truncating to number of lines read
+    for (i, k) in enumerate(pashrkeys[2:end])
+        D[k] = X[i+3][1:nl]
+    end
+    return D
+end
+
+end
