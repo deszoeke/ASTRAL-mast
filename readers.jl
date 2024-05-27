@@ -53,7 +53,10 @@ function psldatetime(d::Date, hr::Integer, psltime::AbstractString)
     DateTime(Date(d)) + Hour(hr) + mm + SS + sss
 end
 function psldatetime(d::Date, hr::Integer=0, minute::Real=0)
-    DateTime(Date(d)) + Hour(hr) + Minute(minute) + Second(second)
+    DateTime(Date(d)) + Hour(hr) + Minute(minute) + Second(secnd) + Millisecond(secnd)
+end
+function psldatetime(d::Date, hr::Integer=0, minute::Integer=0, secnd::Integer=0, millisecnd::Integer=0)
+    DateTime(Date(d)) + Hour(hr) + Minute(minute) + Second(secnd) + Millisecond(millisecnd)
 end
 function psldatetime(yearday::Integer, hr::Integer=0; minute::Real=0, baseyear=baseyear)
     DateTime(baseyear-1,12,31) + Day(yearday) + Hour(hr) + Minute(minute)
