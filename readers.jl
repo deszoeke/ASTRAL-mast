@@ -664,19 +664,18 @@ function read_fps_dict(pathfilename, keys;
 
     # read data from file
     datatime, X = read_fps_data(pathfilename; 
-        nheader=nheader, nsample=nsample, ncolumn=ncolumn )
+        nheader=nheader, nsample=nsample )
     return NoaaDas.das_dict(keys, datatime, X) # returns dict
 end
 
 "read and parse one file"
 function read_fps_data(pathfilename::AbstractString;
     nheader=1, 
-    nsample=countlines(pathfilenames) - nheader, 
-    ncolumn=26 )
+    nsample=countlines(pathfilenames) - nheader)
 
     # trivially iterate over 1-vector
     dt, X = read_fps_data(pathfilename[1:1]; 
-        nheader=nheader, nsample=nsample, ncolumn=ncolumn )
+        nheader=1, nsample=nsample )
     return dt, X
 end
 
@@ -685,17 +684,15 @@ parseblank2missing(T, s) = isempty(s) ? missing : parse(T, s)
 "read and concatenate data from multiple files"
 function read_fps_data(pathfilename::Vector{<:AbstractString};
     nheader=1,
-    nsample=sum( countlines.(pathfilenames) .- nheader ),
-    ncolumn=1 ) # data, not including timestamp
+    nsample=sum( countlines.(pathfilenames) .- nheader ) )
 
     # preallocate the data
     # psltime = Vector{String}(undef, nsample) # will point to data as it is read
     psldt = Vector{DateTime}(undef, nsample) # will point to data as it is read
-    X = Array{Union{Float32,Missing}, 2}(undef, nsample, ncolumn)
+    X = Vector{Union{Float32,Missing}}(undef, nsample)
     fill!(X, missing)
 
     nl = 0
-    maxcol=0
     for pfile in pathfilename
         # find hour from the filename
         shortfilename = last(splitpath(pfile))
@@ -710,22 +707,14 @@ function read_fps_data(pathfilename::Vector{<:AbstractString};
             for line in readlines(file)
                 nl += 1
                 splt = split(line, r"[\s\*]+") # as many delims as possible, counting literal *
-
-                nx = min(ncolumn, length(splt[2:end]))
-                if nx > 0 # skip empty lines
-                    psltime = splt[1]
-                    psldt[nl] = psldatetime(basedt, hr, psltime)
-
-                    dataline = parseblank2missing.(Float32, splt[2:end])
-                    maxcol = max(maxcol, nx) # data in longest line
-
-                    X[nl, 1:nx] .= dataline[1:nx]
-                end
+                psltime = splt[1]
+                psldt[nl] = psldatetime(basedt, hr, psltime)
+                X[nl] = parseblank2missing.(Float32, splt[2][5:end])
             end
         end
     end
 
-    return psldt[1:nl], X[1:nl, 1:maxcol]
+    return psldt[1:nl], X[1:nl]
 end
 
 end
