@@ -101,7 +101,7 @@ end
 
 "read and concatenate data from multiple files"
 # function read_das_data(pathfilename::Vector{<:AbstractString};
-function read_das_data(pathfilename);
+function read_das_data(pathfilename;
     nheader=1,
     nsample=sum( countlines.(pathfilenames) .- nheader ),
     ncolumn=30 ) # data, not including timestamp
@@ -115,7 +115,7 @@ function read_das_data(pathfilename);
     nl = 0
     maxcol=0
     # iterates over filenames or executes for block on a single filename
-    p = isvector(pathfilename) ? pathfilename : Ref(pathfilename)
+    p = pathfilename isa Vector ? pathfilename : Ref(pathfilename)
     for pfile in p
         # find hour from the filename
         shortfilename = last(splitpath(pfile))
