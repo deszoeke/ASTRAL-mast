@@ -588,3 +588,87 @@ function read_pashr_dict(fullfiles; nheader=0, nsample=sum(countlines.(fullfiles
 end
 
 end
+
+
+"read fast pressure sensors"
+module DasFps
+
+using Dates
+using ..NoaaDas
+export read_fps_dict
+
+baseyear = 2024
+
+"read fps das data and put in a dictionary"
+function read_fps_dict(pathfilename, keys;
+    nheader=1,
+    nsample=sum(countlines.(pathfilename) .- nheader),
+    ncolumn=length(keys)-1 ) # default columns in data excluding datestamp
+
+    # read data from file
+    datatime, X = read_fps_data(pathfilename; 
+        nheader=nheader, nsample=nsample, ncolumn=ncolumn )
+    return NoaaDas.das_dict(keys, datatime, X) # returns dict
+end
+
+"read and parse one file"
+function read_fps_data(pathfilename::AbstractString;
+    nheader=1, 
+    nsample=countlines(pathfilenames) - nheader, 
+    ncolumn=26 )
+
+    # trivially iterate over 1-vector
+    dt, X = read_fps_data(pathfilename[1:1]; 
+        nheader=nheader, nsample=nsample, ncolumn=ncolumn )
+    return dt, X
+end
+
+parseblank2missing(T, s) = isempty(s) ? missing : parse(T, s)
+
+"read and concatenate data from multiple files"
+function read_fps_data(pathfilename::Vector{<:AbstractString};
+    nheader=1,
+    nsample=sum( countlines.(pathfilenames) .- nheader ),
+    ncolumn=1 ) # data, not including timestamp
+
+    # preallocate the data
+    # psltime = Vector{String}(undef, nsample) # will point to data as it is read
+    psldt = Vector{DateTime}(undef, nsample) # will point to data as it is read
+    X = Array{Union{Float32,Missing}, 2}(undef, nsample, ncolumn)
+    fill!(X, missing)
+
+    nl = 0
+    maxcol=0
+    for pfile in pathfilename
+        # find hour from the filename
+        shortfilename = last(splitpath(pfile))
+        ddd = shortfilename[end-12:end-10]
+        basedt = Date(baseyear-1,12,31) + Day(yday(ddd))
+        hr = parse(Int32, shortfilename[end-9:end-8])
+
+        open(pfile) do file
+            for _ in 1:nheader
+                readline(file) # skip header
+            end
+            for line in readlines(file)
+                nl += 1
+                splt = split(line, r"[\s\*]+") # as many delims as possible, counting literal *
+
+                nx = min(ncolumn, length(splt[2:end]))
+                if nx > 0 # skip empty lines
+                    psltime = splt[1]
+                    psldt[nl] = psldatetime(basedt, hr, psltime)
+
+                    dataline = parseblank2missing.(Float32, splt[2:end])
+                    maxcol = max(maxcol, nx) # data in longest line
+
+                    X[nl, 1:nx] .= dataline[1:nx]
+                end
+            end
+        end
+    end
+
+    return psldt[1:nl], X[1:nl, 1:maxcol]
+end
+
+end
