@@ -100,6 +100,61 @@ function read_das_data(pathfilename::AbstractString;
 end
 
 "read and concatenate data from multiple files"
+# function read_das_data(pathfilename::Vector{<:AbstractString};
+function read_das_data(pathfilename);
+    nheader=1,
+    nsample=sum( countlines.(pathfilenames) .- nheader ),
+    ncolumn=30 ) # data, not including timestamp
+
+    # preallocate the data
+    # psltime = Vector{String}(undef, nsample) # will point to data as it is read
+    psldt = Vector{DateTime}(undef, nsample) # will point to data as it is read
+    X = Array{Union{Float32,Missing}, 2}(undef, nsample, ncolumn)
+    fill!(X, missing)
+
+    nl = 0
+    maxcol=0
+    # iterates over filenames or executes for block on a single filename
+    p = isvector(pathfilename) ? pathfilename : Ref(pathfilename)
+    for pfile in p
+        # find hour from the filename
+        shortfilename = last(splitpath(pfile))
+        ddd = shortfilename[end-12:end-10]
+        basedt = Date(baseyear-1,12,31) + Day(yday(ddd))
+        hr = parse(Int32, shortfilename[end-9:end-8])
+
+        open(pfile) do file
+            for _ in 1:nheader
+                readline(file) # skip header
+            end
+            for line in readlines(file)
+                # split in 2 stages, space delimits prepended time
+                tsplt = split(line, r"\s+")   # any number of spaces
+                splt  = split(tsplt[2], r",") # EVERY comma!
+                nx = min(ncolumn, length(splt))
+                if nx > 0 # skip empty lines
+                    nl += 1
+                    psltime = tsplt[1]
+                    psldt[nl] = psldatetime(basedt, hr, psltime)
+
+                    dataline = parseblank2missing.(Float32, splt)
+                    # try
+                    #     parseblank2missing.(Float32, splt[2:end])
+                    # catch
+                    #     error("failed to parse: $(splt[2:end])")
+                    # end
+                    maxcol = max(maxcol, nx) # data in longest line
+                    X[nl, 1:nx] .= dataline[1:nx]
+                end
+            end
+        end
+    end
+
+    return psldt[1:nl], X[1:nl, 1:maxcol]
+end
+
+#=
+"read and concatenate data from multiple files"
 function read_das_data(pathfilename::Vector{<:AbstractString};
     nheader=1,
     nsample=sum( countlines.(pathfilenames) .- nheader ),
@@ -126,18 +181,19 @@ function read_das_data(pathfilename::Vector{<:AbstractString};
             end
             for line in readlines(file)
                 nl += 1
-                splt = split(line, r"[\s,]+")
+                splt = split(line, r"[\s,]+") # !BUG!
 
                 nx = min(ncolumn, length(splt[2:end]))
                 if nx > 0 # skip empty lines
                     psltime = splt[1]
                     psldt[nl] = psldatetime(basedt, hr, psltime)
 
-                    dataline = try
-                        parseblank2missing.(Float32, splt[2:end])
-                    catch
-                        error("failed to parse: $(splt[2:end])")
-                    end
+                    dataline = parseblank2missing.(Float32, splt[2:end])
+                    # try
+                    #     parseblank2missing.(Float32, splt[2:end])
+                    # catch
+                    #     error("failed to parse: $(splt[2:end])")
+                    # end
                     maxcol = max(maxcol, nx) # data in longest line
                     X[nl, 1:nx] .= dataline[1:nx]
                 end
@@ -147,6 +203,7 @@ function read_das_data(pathfilename::Vector{<:AbstractString};
 
     return psldt[1:nl], X[1:nl, 1:maxcol]
 end
+=#
 
 "assign data to a dict of keys"
 function das_dict(keys, datatime, X)
