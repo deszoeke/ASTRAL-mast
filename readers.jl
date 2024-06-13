@@ -7,6 +7,7 @@ using Printf
 export get_das_filenames, get_das_pathfiles
 export yday, psldatetime, decimal_hour
 export read_das_dict
+export read_lsr_dict
 
 # utility functions
 # m2n(x) = ismissing(x) ? NaN : x
@@ -228,6 +229,47 @@ function decimal_hour(dt::DateTime)::Float64
     # Calculate the decimal hour
     decimal_hour = hour + minute / 60 + second / 3600 + millisecond / 3600000
     return decimal_hour
+end
+
+### add read_lsr_dict under NoaaDas
+
+function read_lsr_dict( pathfilenames; 
+    nheader=1, ncol=3, baseyear=baseyear,
+    nrows=sum( countlines.(pathfilenames) .- nheader ),
+    lsrkeys = [:time, :R, :A, :Q],
+    lsr_regex=r"^([\d]{2})([\d]{2})([\d]{3}) r([\d\.]+);a([\d]{2});q([\d]{2,3})" )
+    
+    psldt = Vector{DateTime}(undef, nrows)
+    R = Vector{Float32}(undef, nrows)
+    A = Vector{Int32}(undef, nrows)
+    Q = Vector{Int32}(undef, nrows)
+
+    nl = 0
+    # make even one file iterable
+    p = pathfilenames isa Vector ? pathfilenames : Ref(pathfilenames)
+    for f in p
+        # find hour from the filename
+        shortfilename = last(splitpath(f))
+        ddd = shortfilename[end-12:end-10]
+        basedt = Date(baseyear-1,12,31) + Day(yday(ddd))
+        hr = parse(Int32, shortfilename[end-9:end-8])
+        open(f) do file
+            for _ in 1:nheader
+                readline(file) # skip header
+            end
+            for line in readlines(file)
+                M = match(lsr_regex, line)
+                if !isnothing(M) && !isempty(M)
+                    nl += 1
+                    minut, secnd, millisecnd, A[nl], Q[nl] = parse.(Int32, M.captures[[1:3; 5:6]])
+                    R[nl] = parse.(Float32, M.captures[4])
+                    psldt[nl] = psldatetime(basedt, hr, minut, secnd, millisecnd)
+                end
+            end
+        end
+    end
+    # return truncated data in dictionary
+    D = NoaaDas.das_dict(lsrkeys, psldt[1:nl], [R[1:nl] A[1:nl] Q[1:nl]])
 end
 
 end
